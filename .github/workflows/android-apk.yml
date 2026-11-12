@@ -13,24 +13,32 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build Cadence Mobile Viewer V0.3.0
     runs-on: ubuntu-latest
 
     steps:
+      # 1. 获取 GitHub 仓库源码
       - name: Checkout source
         uses: actions/checkout@v4
 
+      # 2. 配置 JDK 17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # 3. 配置 Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
           packages: 'platform-tools'
 
+      # 4. 接受 Android SDK 许可证
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses
+
+      # 5. 安装编译所需组件
       - name: Install Android SDK components
         run: |
           sdkmanager --install \
@@ -39,61 +47,73 @@ jobs:
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
 
+      # 6. 配置 Gradle 8.9
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      # 解压 Android 工程源码
-      - name: Extract Android project
+      # 7. 准备 Android 工程
+      - name: Prepare Android project
         shell: bash
         run: |
-          ZIP_FILE="Cadence-Mobile-Viewer-V0.2.0-parser-validation.zip"
+          set -euo pipefail
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "::error::找不到源码 ZIP 文件"
-            ls -la
-            exit 1
+          if [ -f "$GITHUB_WORKSPACE/settings.gradle.kts" ]; then
+            PROJECT_DIR="$GITHUB_WORKSPACE"
+          else
+            ZIP_FILE="$GITHUB_WORKSPACE/Cadence-Mobile-Viewer-V0.3.0-DSN-Container-Parser.zip"
+
+            if [ ! -f "$ZIP_FILE" ]; then
+              echo "::error::找不到 V0.3.0 源码 ZIP"
+              ls -la "$GITHUB_WORKSPACE"
+              exit 1
+            fi
+
+            PROJECT_DIR="$GITHUB_WORKSPACE/cadence-project"
+            mkdir -p "$PROJECT_DIR"
+
+            echo "解压 V0.3.0 Android 工程..."
+            unzip -o "$ZIP_FILE" -d "$PROJECT_DIR"
           fi
 
-          echo "开始解压 Android 工程..."
-          unzip -o "$ZIP_FILE" -d "$GITHUB_WORKSPACE"
+          test -f "$PROJECT_DIR/settings.gradle.kts"
+          test -f "$PROJECT_DIR/app/build.gradle.kts"
+          test -f "$PROJECT_DIR/app/src/main/cpp/native_probe.cpp"
 
-          echo "解压完成，检查工程文件..."
-          ls -la
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-          if [ ! -f "settings.gradle.kts" ]; then
-            echo "::error::解压后仍然找不到 settings.gradle.kts"
-            exit 1
-          fi
+          echo "========== Android Project =========="
+          ls -la "$PROJECT_DIR"
 
-          echo "Android 工程已准备完成"
-
-      - name: Verify Android project
-        run: |
-          echo "========== Project files =========="
-          ls -la
-          echo "========== App files =========="
-          ls -la app/src/main
-
+      # 8. 编译 Debug APK
       - name: Build Debug APK
         run: |
           gradle --no-daemon \
-            -p "$GITHUB_WORKSPACE" \
+            -p "$PROJECT_DIR" \
             assembleDebug
 
+      # 9. 检查 APK 是否生成
+      - name: Verify APK
+        run: |
+          test -f "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          ls -lh "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
+
+      # 10. 上传 APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Cadence-Mobile-Viewer-V0.2.0
-          path: app/build/outputs/apk/debug/*.apk
+          name: Cadence-Mobile-Viewer-V0.3.0-debug
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 14
 
+      # 11. 上传编译报告
       - name: Upload build reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Cadence-Mobile-Viewer-Build-Reports
+          name: Cadence-Mobile-Viewer-V0.3.0-build-reports
           path: |
             **/build/reports/
             **/build/outputs/logs/
