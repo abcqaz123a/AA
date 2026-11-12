@@ -44,48 +44,49 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      # 自动定位 Android 工程目录
-      - name: Locate Gradle project
+      # 解压 Android 工程源码
+      - name: Extract Android project
         shell: bash
         run: |
-          echo "========== Repository files =========="
-          ls -la
+          ZIP_FILE="Cadence-Mobile-Viewer-V0.2.0-parser-validation.zip"
 
-          echo "========== Searching Gradle project =========="
-
-          SETTINGS_FILE=$(find . \
-            -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -not -path "*/.gradle/*" \
-            -print -quit)
-
-          if [ -z "$SETTINGS_FILE" ]; then
-            echo "::error::找不到 settings.gradle 或 settings.gradle.kts"
-            echo "请确认 Android 工程源码已经上传到 GitHub 仓库。"
-            find . -maxdepth 4 -type f | head -200
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "::error::找不到源码 ZIP 文件"
+            ls -la
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-          PROJECT_DIR=$(realpath "$PROJECT_DIR")
+          echo "开始解压 Android 工程..."
+          unzip -o "$ZIP_FILE" -d "$GITHUB_WORKSPACE"
 
-          echo "Found Gradle project: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "解压完成，检查工程文件..."
+          ls -la
 
-          echo "========== Project root files =========="
-          ls -la "$PROJECT_DIR"
+          if [ ! -f "settings.gradle.kts" ]; then
+            echo "::error::解压后仍然找不到 settings.gradle.kts"
+            exit 1
+          fi
+
+          echo "Android 工程已准备完成"
+
+      - name: Verify Android project
+        run: |
+          echo "========== Project files =========="
+          ls -la
+          echo "========== App files =========="
+          ls -la app/src/main
 
       - name: Build Debug APK
         run: |
           gradle --no-daemon \
-            -p "$PROJECT_DIR" \
+            -p "$GITHUB_WORKSPACE" \
             assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Cadence-Mobile-Viewer-V0.2.0
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Upload build reports
