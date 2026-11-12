@@ -26,8 +26,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # 关键修复：明确指定 platform-tools
-      # 不再安装已经废弃的 tools 包
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
@@ -46,20 +44,48 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Show build environment
+      # 自动定位 Android 工程目录
+      - name: Locate Gradle project
+        shell: bash
         run: |
-          java -version
-          gradle --version
-          sdkmanager --list_installed
+          echo "========== Repository files =========="
+          ls -la
+
+          echo "========== Searching Gradle project =========="
+
+          SETTINGS_FILE=$(find . \
+            -type f \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+            -not -path "*/.gradle/*" \
+            -print -quit)
+
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "::error::找不到 settings.gradle 或 settings.gradle.kts"
+            echo "请确认 Android 工程源码已经上传到 GitHub 仓库。"
+            find . -maxdepth 4 -type f | head -200
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+          PROJECT_DIR=$(realpath "$PROJECT_DIR")
+
+          echo "Found Gradle project: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+          echo "========== Project root files =========="
+          ls -la "$PROJECT_DIR"
 
       - name: Build Debug APK
-        run: gradle --no-daemon assembleDebug
+        run: |
+          gradle --no-daemon \
+            -p "$PROJECT_DIR" \
+            assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Cadence-Mobile-Viewer-V0.2.0
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Upload build reports
