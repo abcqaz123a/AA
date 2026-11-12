@@ -26,13 +26,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # 关键修复：明确指定 platform-tools
+      # 不再安装已经废弃的 tools 包
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - name: Install Android SDK components
         run: |
           sdkmanager --install \
-            "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0" \
             "ndk;27.2.12479018" \
@@ -42,6 +45,12 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Show build environment
+        run: |
+          java -version
+          gradle --version
+          sdkmanager --list_installed
 
       - name: Build Debug APK
         run: gradle --no-daemon assembleDebug
@@ -62,4 +71,3 @@ jobs:
             **/build/reports/
             **/build/outputs/logs/
           if-no-files-found: ignore
-
